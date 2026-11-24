@@ -1,5 +1,5 @@
 
-name: QFX API Connection Test
+name: QFX API Diagnostic
 
 on:
   workflow_dispatch:
@@ -8,17 +8,32 @@ permissions:
   contents: read
 
 jobs:
-  test-qfx:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 3
 
     steps:
-      - name: Check QFX API
+      - name: Inspect QFX response
+        shell: bash
         run: |
           code=$(curl --silent --show-error \
-            --output /dev/null \
-            --write-out "%{http_code}" \
             --max-time 20 \
+            --dump-header headers.txt \
+            --output body.txt \
+            --write-out "%{http_code}" \
             "https://website-api.qfxcinemas.com/api/v3/external/movie-shows/723") || code="NETWORK_ERROR"
 
-          echo "QFX HTTP status: $code"
+          echo "HTTP status: $code"
+          echo "Response headers:"
+          grep -iE '^(server|content-type|cf-ray):' headers.txt || true
+
+          echo "Response classification:"
+          if grep -Eqi 'just a moment|challenge-platform|checking your browser' body.txt; then
+            echo "Possible browser security challenge"
+          elif grep -Eqi 'access denied|forbidden|blocked' body.txt; then
+            echo "Access denied response"
+          elif grep -Eq '^[[:space:]]*[\{\[]' body.txt; then
+            echo "Possible JSON response"
+          else
+            echo "Unrecognized response"
+          fi
